@@ -99,3 +99,8 @@ pnp.*
 .idea/
 .trae/
 
+# aiterm 专属
+tests/fixtures/keys/
+.env
+.env.*
+!.env.example
