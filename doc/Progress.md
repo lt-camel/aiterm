@@ -19,7 +19,7 @@
 
 ## 当前焦点
 
-Phase 1 — SSH Config（Phase 0 已完成）
+Phase 2 — SSH Connection（Phase 1 已完成）
 
 ---
 
@@ -56,32 +56,32 @@ Phase 1 — SSH Config（Phase 0 已完成）
 
 | Step | 状态 | 备注 |
 |------|------|------|
-| 1.1 platform/paths.ts 平台路径 | [ ] | |
-| 1.2 ssh-config/model.ts 类型定义 | [ ] | |
-| 1.3 ssh-config/parser.ts 解析器 | [ ] | |
-| 1.4 ssh-config/loader.ts 加载器 | [ ] | |
-| 1.5 ssh-config/resolver.ts Target 解析 | [ ] | |
-| 1.6 cli/commands/config.ts | [ ] | |
-| 1.7 cli/commands/host.ts | [ ] | |
-| 1.8 runtime/runtime.ts 组装 | [ ] | |
-| 1.9 cli/renderer 输出格式化 | [ ] | |
+| 1.1 platform/paths.ts 平台路径 | [x] | getSshDir/getSshConfigPath/expandTilde |
+| 1.2 ssh-config/model.ts 类型定义 | [x] | HostBlock/SSHConfig/ResolvedHost/SUPPORTED_DIRECTIVES |
+| 1.3 ssh-config/parser.ts 解析器 | [x] | parse/getNamedHosts，支持 Host/HostName/User/Port/IdentityFile |
+| 1.4 ssh-config/loader.ts 加载器 | [x] | load/check，ENOENT → ConfigError |
+| 1.5 ssh-config/resolver.ts Target 解析 | [x] | resolve，展开 ~、默认值、未知 Target 抛 ConfigError |
+| 1.6 cli/commands/config.ts | [x] | config path / config check |
+| 1.7 cli/commands/host.ts | [x] | host list / host show <target> |
+| 1.8 runtime/runtime.ts 组装 | [x] | Runtime 类封装 loadConfig/resolveTarget/listHosts/checkConfig |
+| 1.9 cli/renderer 输出格式化 | [x] | formatConfigPath/Check/formatHostList/Show，人类+JSON 双格式 |
 
 **验收**：
 
 | 编号 | 验收项 | 状态 |
 |------|--------|------|
-| A1.1 | Parser 解析标准 SSH Config | [ ] |
-| A1.2 | Parser 处理多 Host 块 | [ ] |
-| A1.3 | Parser 处理 IdentityFile 多值 | [ ] |
-| A1.4 | Resolver 解析 Target → ResolvedHost | [ ] |
-| A1.5 | Resolver 展开 `~` 为 home 目录 | [ ] |
-| A1.6 | Resolver 缺失指令使用默认值 | [ ] |
-| A1.7 | `aiterm config path` 可用 | [ ] |
-| A1.8 | `aiterm config check` 可用 | [ ] |
-| A1.9 | `aiterm host list` 可用 | [ ] |
-| A1.10 | `aiterm host show` 可用 | [ ] |
-| A1.11 | 未知 Target 给出清晰错误 | [ ] |
-| A1.12 | 模块依赖方向正确 | [ ] |
+| A1.1 | Parser 解析标准 SSH Config | [x] |
+| A1.2 | Parser 处理多 Host 块 | [x] |
+| A1.3 | Parser 处理 IdentityFile 多值 | [x] |
+| A1.4 | Resolver 解析 Target → ResolvedHost | [x] |
+| A1.5 | Resolver 展开 `~` 为 home 目录 | [x] |
+| A1.6 | Resolver 缺失指令使用默认值 | [x] |
+| A1.7 | `aiterm config path` 可用 | [x] |
+| A1.8 | `aiterm config check` 可用 | [x] |
+| A1.9 | `aiterm host list` 可用 | [x] |
+| A1.10 | `aiterm host show` 可用 | [x] |
+| A1.11 | 未知 Target 给出清晰错误 | [x] |
+| A1.12 | 模块依赖方向正确 | [x] |
 
 ---
 
