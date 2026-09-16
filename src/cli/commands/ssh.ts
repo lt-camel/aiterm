@@ -8,13 +8,10 @@ import { getTerminalSize, attachTerminal } from '@/terminal/terminal';
  * 对应 CLI-Spec §4。流程：
  * 1. 加载 SSH Config
  * 2. 解析 Target → ResolvedHost
- * 3. SSHClient.connect → SSHConnection
+ * 3. SSHClient.connect → SSHConnection（无密钥时提示密码）
  * 4. 创建交互式 PTY 会话
  * 5. 双向绑定本地终端（含 escape 序列）
  * 6. 等待会话结束（远程退出 / escape 断开）
- *
- * @param program Commander 程序实例
- * @param runtime Runtime 实例
  */
 export function registerSshCommand(program: Command, runtime: Runtime): void {
     program
@@ -63,6 +60,22 @@ export function registerSshCommand(program: Command, runtime: Runtime): void {
                         const answer = await readLine();
                         return answer.toLowerCase() === 'y';
                     },
+                    onPassword: async (username: string, host: string) => {
+                        if (json) {
+                            process.stdout.write(
+                                JSON.stringify({
+                                    event: 'password_required',
+                                    username,
+                                    host,
+                                }) + '\n',
+                            );
+                            return '';
+                        }
+                        process.stderr.write(`${username}@${host} 的密码: `);
+                        const password = await readLine(true);
+                        process.stderr.write('\n');
+                        return password;
+                    },
                 });
 
                 const session = await connection.createSession({
@@ -97,17 +110,43 @@ export function registerSshCommand(program: Command, runtime: Runtime): void {
 }
 
 /**
- * 从 stdin 读取一行（用于 Known Hosts 确认）。
+ * 从 stdin 读取一行。
+ *
+ * @param silent 是否隐藏输入（密码模式，不回显字符）
  */
-function readLine(): Promise<string> {
+function readLine(silent = false): Promise<string> {
     return new Promise((resolve) => {
+        if (silent && process.stdin.isTTY) {
+            process.stdin.setRawMode(true);
+        }
+        process.stdin.resume();
+
         const chunks: Buffer[] = [];
         const onData = (chunk: Buffer) => {
-            chunks.push(chunk);
-            const str = Buffer.concat(chunks).toString('utf-8');
-            if (str.includes('\n') || str.includes('\r')) {
-                process.stdin.removeListener('data', onData);
-                resolve(str.replace(/[\r\n]/g, '').trim());
+            for (const byte of chunk) {
+                if (byte === 0x0d || byte === 0x0a) {
+                    process.stdin.removeListener('data', onData);
+                    if (silent && process.stdin.isTTY) {
+                        process.stdin.setRawMode(false);
+                    }
+                    resolve(Buffer.concat(chunks).toString('utf-8'));
+                    return;
+                }
+                if (byte === 0x03) {
+                    process.stdin.removeListener('data', onData);
+                    if (silent && process.stdin.isTTY) {
+                        process.stdin.setRawMode(false);
+                    }
+                    resolve('');
+                    return;
+                }
+                if (byte === 0x7f || byte === 0x08) {
+                    if (chunks.length > 0) {
+                        chunks.pop();
+                    }
+                    continue;
+                }
+                chunks.push(Buffer.from([byte]));
             }
         };
         process.stdin.on('data', onData);

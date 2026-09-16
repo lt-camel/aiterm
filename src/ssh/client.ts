@@ -8,6 +8,7 @@ import { SSHConnectionImpl } from '@/ssh/connection';
 
 export interface SSHClientOptions {
     onUnknownHost?: (fingerprint: string) => Promise<boolean>;
+    onPassword?: (username: string, host: string) => Promise<string>;
 }
 
 /**
@@ -15,33 +16,27 @@ export interface SSHClientOptions {
  *
  * 对应架构文档 §11。职责：
  * - 建立 SSH 连接
- * - 认证
+ * - 认证（私钥 / Agent / 密码）
  * - Known Hosts 校验（通过 ssh2 hostVerifier 回调）
  * - 返回 SSHConnection
  *
- * Known Hosts 校验使用 ssh2 的 SyncHostVerifier 回调，
- * 在握手阶段获取主机公钥 Buffer，与 known_hosts 比对。
- *
- * @example
- * ```ts
- * const client = new SSHClient();
- * const conn = await client.connect(resolvedHost);
- * ```
+ * 认证流程：
+ * 1. 有 IdentityFile → 加载私钥 → publickey 认证
+ * 2. 无私钥 + onPassword 回调 → 提示输入密码 → password 认证
+ * 3. 认证失败 → tryKeyboard 回退到 keyboard-interactive
  */
 export class SSHClient {
-    /**
-     * 连接到远程主机。
-     *
-     * @param host 已解析的目标主机信息
-     * @param options 连接选项
-     * @returns SSHConnection 实例
-     * @throws ConnectionError 连接失败
-     * @throws AuthError 认证失败
-     * @throws KnownHostsError 主机密钥校验失败
-     */
     async connect(host: ResolvedHost, options?: SSHClientOptions): Promise<SSHConnection> {
         const credentials = await buildCredentials(host);
-        const config = buildConnectConfig(host, credentials.privateKey);
+
+        if (!credentials.privateKey && !credentials.agent && options?.onPassword) {
+            const password = await options.onPassword(credentials.username, host.host);
+            if (password) {
+                credentials.password = password;
+            }
+        }
+
+        const config = buildConnectConfig(host, credentials);
 
         const hostVerifierResult = await this.verifyHostKey(host, options);
         if (hostVerifierResult.error) {
@@ -49,6 +44,12 @@ export class SSHClient {
         }
 
         config.hostVerifier = hostVerifierResult.verifier;
+
+        if (process.env.AITERM_DEBUG === '1') {
+            config.debug = (msg: string) => {
+                process.stderr.write(`[ssh2] ${msg}\n`);
+            };
+        }
 
         const client = createClient();
 
@@ -91,22 +92,11 @@ export class SSHClient {
             client.on('ready', onReady);
             client.on('error', onError);
             client.on('close', onClose);
+
             client.connect(config);
         });
     }
 
-    /**
-     * 预校验 known_hosts 并构建 hostVerifier 回调。
-     *
-     * ssh2 的 SyncHostVerifier: (key: Buffer) => boolean
-     * - 返回 true → 接受连接
-     * - 返回 false → 拒绝连接
-     *
-     * 我们在 connect 前预检 known_hosts：
-     * - Mismatch → 直接抛 KnownHostsError
-     * - Unknown → 调用 onUnknownHost 回调确认
-     * - Match → 设置 hostVerifier 为始终接受
-     */
     private async verifyHostKey(
         _host: ResolvedHost,
         _options?: SSHClientOptions,
@@ -117,16 +107,13 @@ export class SSHClient {
     }
 }
 
-/**
- * 将 ssh2 错误分类为 aiterm 业务错误。
- */
 function classifyError(err: Error, host: ResolvedHost): AitermError {
     const msg = err.message.toLowerCase();
     if (msg.includes('authentication') || msg.includes('auth')) {
         return new AuthError(
             '认证失败：服务器拒绝认证',
             'AUTH_REJECTED',
-            '检查私钥是否匹配远程服务器授权的公钥',
+            '检查认证方式与凭据是否正确',
         );
     }
     if (msg.includes('econnrefused') || msg.includes('refused')) {

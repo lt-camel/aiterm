@@ -3,6 +3,7 @@ import { resolve as resolveTarget } from '@/ssh-config/resolver';
 import { getNamedHosts } from '@/ssh-config/parser';
 import type { ResolvedHost, SSHConfig } from '@/ssh-config/model';
 import { SSHClient } from '@/ssh/client';
+import type { SSHClientOptions } from '@/ssh/client';
 import type { SSHConnection } from '@/ssh/connection';
 
 /**
@@ -77,7 +78,7 @@ export class Runtime {
      */
     async connect(
         host: ResolvedHost,
-        options?: { onUnknownHost?: (fingerprint: string) => Promise<boolean> },
+        options?: SSHClientOptions,
     ): Promise<SSHConnection> {
         return this.sshClient.connect(host, options);
     }

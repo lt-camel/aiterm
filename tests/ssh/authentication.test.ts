@@ -1,8 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { writeFile, mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { loadPrivateKey, buildCredentials } from '@/ssh/authentication';
-import { AuthError } from '@/errors/errors';
+import { loadPrivateKey, buildCredentials, detectAgent } from '@/ssh/authentication';
 
 const tmpDir = join(process.env.TEMP ?? '/tmp', 'aiterm-test-auth');
 
@@ -16,18 +15,15 @@ describe('Authentication', () => {
     });
 
     describe('loadPrivateKey', () => {
-        it('空列表抛 AUTH_KEY_NOT_FOUND', async () => {
-            await expect(loadPrivateKey([])).rejects.toThrow(AuthError);
-            try {
-                await loadPrivateKey([]);
-            } catch (e) {
-                expect((e as AuthError).code).toBe('AUTH_KEY_NOT_FOUND');
-            }
+        it('空列表返回 undefined', async () => {
+            const result = await loadPrivateKey([]);
+            expect(result).toBeUndefined();
         });
 
-        it('不存在的路径抛 AUTH_KEY_NOT_FOUND', async () => {
+        it('不存在的路径返回 undefined', async () => {
             const path = join(tmpDir, 'nonexistent-key');
-            await expect(loadPrivateKey([path])).rejects.toThrow(AuthError);
+            const result = await loadPrivateKey([path]);
+            expect(result).toBeUndefined();
         });
 
         it('成功读取私钥文件', async () => {
@@ -36,7 +32,7 @@ describe('Authentication', () => {
             await writeFile(keyPath, keyContent);
             const result = await loadPrivateKey([keyPath]);
             expect(result).toBeDefined();
-            expect(result.equals(keyContent)).toBe(true);
+            expect(result!.equals(keyContent)).toBe(true);
         });
 
         it('多个路径时跳过不存在的，读取第一个有效的', async () => {
@@ -45,12 +41,13 @@ describe('Authentication', () => {
             const keyContent = Buffer.from('good-key-content');
             await writeFile(goodPath, keyContent);
             const result = await loadPrivateKey([badPath, goodPath]);
-            expect(result.equals(keyContent)).toBe(true);
+            expect(result).toBeDefined();
+            expect(result!.equals(keyContent)).toBe(true);
         });
     });
 
     describe('buildCredentials', () => {
-        it('从 ResolvedHost 构建凭据', async () => {
+        it('有 IdentityFile 时返回私钥凭据', async () => {
             const keyPath = join(tmpDir, 'cred-key');
             const keyContent = Buffer.from('credential-key');
             await writeFile(keyPath, keyContent);
@@ -62,7 +59,28 @@ describe('Authentication', () => {
             };
             const creds = await buildCredentials(resolved);
             expect(creds.username).toBe('root');
-            expect(creds.privateKey.equals(keyContent)).toBe(true);
+            expect(creds.privateKey).toBeDefined();
+            expect(creds.privateKey!.equals(keyContent)).toBe(true);
+        });
+
+        it('无 IdentityFile 时回退到 Agent', async () => {
+            const resolved = {
+                host: '192.168.1.100',
+                port: 22,
+                username: 'root',
+                identityFiles: [],
+            };
+            const creds = await buildCredentials(resolved);
+            expect(creds.username).toBe('root');
+            expect(creds.privateKey).toBeUndefined();
+        });
+    });
+
+    describe('detectAgent', () => {
+        it('Windows 返回 pageant', () => {
+            if (process.platform === 'win32') {
+                expect(detectAgent()).toBe('pageant');
+            }
         });
     });
 });
