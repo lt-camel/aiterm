@@ -19,7 +19,7 @@
 
 ## 当前焦点
 
-Phase 2 — SSH Connection（Phase 1 已完成）
+Phase 3 — Exec（Phase 2 已完成）
 
 ---
 
@@ -89,34 +89,34 @@ Phase 2 — SSH Connection（Phase 1 已完成）
 
 | Step | 状态 | 备注 |
 |------|------|------|
-| 2.1 ssh/transport.ts Transport Adapter | [ ] | |
-| 2.2 ssh/known-hosts.ts | [ ] | |
-| 2.3 ssh/authentication.ts | [ ] | |
-| 2.4 ssh/client.ts SSHClient | [ ] | |
-| 2.5 ssh/connection.ts SSHConnection | [ ] | |
-| 2.6 ssh/session.ts SSHSession | [ ] | |
-| 2.7 terminal/terminal.ts 本地终端适配 | [ ] | |
-| 2.8 terminal/pty.ts + resize.ts | [ ] | |
-| 2.9 cli/commands/ssh.ts | [ ] | |
-| 2.10 runtime 集成 SSHClient | [ ] | |
+| 2.1 ssh/transport.ts Transport Adapter | [x] | createClient() + re-export ssh2 类型 |
+| 2.2 ssh/known-hosts.ts | [x] | verifyKnownHosts/appendToKnownHosts/computeFingerprint，Match/Unknown/Mismatch 三态 |
+| 2.3 ssh/authentication.ts | [x] | loadPrivateKey/buildCredentials，IdentityFile 认证 |
+| 2.4 ssh/client.ts SSHClient | [x] | connect(host, options) → SSHConnection，hostVerifier + 错误分类 |
+| 2.5 ssh/connection.ts SSHConnection | [x] | exec/createSession/close，SSHConnectionImpl |
+| 2.6 ssh/session.ts SSHSession | [x] | write/onData/resize/close，SSHSessionImpl |
+| 2.7 terminal/terminal.ts 本地终端适配 | [x] | attachTerminal 双向绑定 stdin/stdout/resize |
+| 2.8 terminal/pty.ts + resize.ts | [x] | createPTYOptions/watchResize |
+| 2.9 cli/commands/ssh.ts | [x] | aiterm ssh <target>，Known Hosts 交互确认 |
+| 2.10 runtime 集成 SSHClient | [x] | Runtime.connect() 委托 SSHClient |
 
 **验收**：
 
 | 编号 | 验收项 | 状态 |
 |------|--------|------|
-| A2.1 | SSHClient 用 ResolvedHost 建立连接 | [ ] |
-| A2.2 | IdentityFile 私钥认证成功 | [ ] |
-| A2.3 | 认证失败给出清晰错误 | [ ] |
-| A2.4 | Known Hosts Match 正常连接 | [ ] |
-| A2.5 | Known Hosts Unknown 提示确认 | [ ] |
-| A2.6 | Known Hosts Mismatch 拒绝连接 | [ ] |
-| A2.7 | `aiterm ssh production` 可登录 | [ ] |
-| A2.8 | 交互式会话双向流 | [ ] |
-| A2.9 | 终端 resize 同步 | [ ] |
-| A2.10 | Ctrl+C 等 signal 传递 | [ ] |
-| A2.11 | exit/Ctrl+D 正常退出 | [ ] |
-| A2.12 | Transport Adapter 隔离 ssh2 | [ ] |
-| A2.13 | 连接超时与网络错误友好提示 | [ ] |
+| A2.1 | SSHClient 用 ResolvedHost 建立连接 | [x] |
+| A2.2 | IdentityFile 私钥认证成功 | [x] |
+| A2.3 | 认证失败给出清晰错误 | [x] |
+| A2.4 | Known Hosts Match 正常连接 | [x] |
+| A2.5 | Known Hosts Unknown 提示确认 | [x] |
+| A2.6 | Known Hosts Mismatch 拒绝连接 | [x] |
+| A2.7 | `aiterm ssh production` 可登录 | [x] |
+| A2.8 | 交互式会话双向流 | [x] |
+| A2.9 | 终端 resize 同步 | [x] |
+| A2.10 | Ctrl+C 等 signal 传递 | [x] |
+| A2.11 | exit/Ctrl+D 正常退出 | [x] |
+| A2.12 | Transport Adapter 隔离 ssh2 | [x] |
+| A2.13 | 连接超时与网络错误友好提示 | [x] |
 
 ---
 

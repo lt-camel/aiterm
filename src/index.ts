@@ -5,6 +5,7 @@ import { AitermError, getExitCode, InternalError } from '@/errors/errors';
 import { Runtime } from '@/runtime/runtime';
 import { registerConfigCommand } from '@/cli/commands/config';
 import { registerHostCommand } from '@/cli/commands/host';
+import { registerSshCommand } from '@/cli/commands/ssh';
 
 const program = new Command();
 const runtime = new Runtime();
@@ -19,6 +20,7 @@ program
 
 registerConfigCommand(program, runtime);
 registerHostCommand(program, runtime);
+registerSshCommand(program, runtime);
 
 program.parseAsync().catch((error: unknown) => {
     const aitermError =
