@@ -1,6 +1,6 @@
 # aiterm 开发进度
 
-**最近更新：2026-09-15**
+**最近更新：2026-09-17**
 
 本文件追踪 [Development-Plan.md](Development-Plan.md) 中各阶段与验收项的实际完成状态。维护规则见 [AGENTS.md](../AGENTS.md) 文档使用规范。
 
@@ -19,7 +19,7 @@
 
 ## 当前焦点
 
-Phase 3 — Exec（Phase 2 已完成）
+Phase 4 — Transfer（Phase 3 已完成）
 
 ---
 
@@ -124,24 +124,24 @@ Phase 3 — Exec（Phase 2 已完成）
 
 | Step | 状态 | 备注 |
 |------|------|------|
-| 3.1 ssh/exec.ts ExecResult 类型 | [ ] | |
-| 3.2 SSHConnection.exec() 实现 | [ ] | |
-| 3.3 cli/commands/exec.ts | [ ] | |
-| 3.4 Exec 输出格式化 | [ ] | |
+| 3.1 ssh/exec.ts ExecResult 类型 | [x] | ExecResult + ExecOptions |
+| 3.2 SSHConnection.exec() 实现 | [x] | 含超时、cleanup、settled 防重复 |
+| 3.3 cli/commands/exec.ts | [x] | registerExecCommand，--timeout 选项 |
+| 3.4 Exec 输出格式化 | [x] | formatExecResult，人类+JSON 双格式 |
 
 **验收**：
 
 | 编号 | 验收项 | 状态 |
 |------|--------|------|
-| A3.1 | `exec("uname -a")` 返回正确 stdout | [ ] |
-| A3.2 | `exec("docker ps")` 返回正确 stdout | [ ] |
-| A3.3 | 命令失败 exitCode 非 0 | [ ] |
-| A3.4 | stderr 内容正确返回 | [ ] |
-| A3.5 | `aiterm exec production -- uname -a` 可用 | [ ] |
-| A3.6 | `aiterm exec production -- docker ps` 可用 | [ ] |
-| A3.7 | 命令执行超时处理 | [ ] |
-| A3.8 | Exec 与 Session 使用不同 Channel | [ ] |
-| A3.9 | 特殊字符正确传递 | [ ] |
+| A3.1 | `exec("uname -a")` 返回正确 stdout | [x] |
+| A3.2 | `exec("docker ps")` 返回正确 stdout | [x] |
+| A3.3 | 命令失败 exitCode 非 0 | [x] |
+| A3.4 | stderr 内容正确返回 | [x] |
+| A3.5 | `aiterm exec production -- uname -a` 可用 | [x] |
+| A3.6 | `aiterm exec production -- docker ps` 可用 | [x] |
+| A3.7 | 命令执行超时处理 | [x] |
+| A3.8 | Exec 与 Session 使用不同 Channel | [x] |
+| A3.9 | 特殊字符正确传递 | [x] |
 
 ---
 

@@ -1,5 +1,6 @@
 import type { ResolvedHost } from '@/ssh-config/model';
 import type { SSHConfig } from '@/ssh-config/model';
+import type { ExecResult } from '@/ssh/exec';
 import { getNamedHosts } from '@/ssh-config/parser';
 
 /**
@@ -97,4 +98,43 @@ export function formatHostShow(target: string, resolved: ResolvedHost, json: boo
         `User:     ${resolved.username}`,
         `Identity: ${identity}`,
     ].join('\n');
+}
+
+/**
+ * 格式化 exec 命令输出。
+ *
+ * 对应 CLI-Spec §3.6。
+ * - 人类格式：stdout 原样输出到 stdout，stderr 原样输出到 stderr，
+ *   exitCode 非零时在 stderr 追加提示
+ * - JSON 格式：{ stdout, stderr, exitCode }
+ *
+ * @param result 远程命令执行结果
+ * @param json 是否输出 JSON 格式
+ * @returns 格式化后的输出（人类格式分别返回 stdout/stderr/exitCode，
+ *          JSON 格式在 stdout 字段返回完整 JSON 字符串）
+ */
+export function formatExecResult(result: ExecResult, json: boolean): {
+    stdout: string;
+    stderr: string;
+    exitCode: number;
+} {
+    if (json) {
+        return {
+            stdout: JSON.stringify(result),
+            stderr: '',
+            exitCode: result.exitCode,
+        };
+    }
+    let stderr = result.stderr;
+    if (result.exitCode !== 0 && !stderr.endsWith('\n') && stderr.length > 0) {
+        stderr += '\n';
+    }
+    if (result.exitCode !== 0) {
+        stderr += `✗ 命令退出码: ${result.exitCode}\n`;
+    }
+    return {
+        stdout: result.stdout,
+        stderr,
+        exitCode: result.exitCode,
+    };
 }

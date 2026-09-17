@@ -5,6 +5,7 @@ import type { ResolvedHost, SSHConfig } from '@/ssh-config/model';
 import { SSHClient } from '@/ssh/client';
 import type { SSHClientOptions } from '@/ssh/client';
 import type { SSHConnection } from '@/ssh/connection';
+import type { ExecResult, ExecOptions } from '@/ssh/exec';
 
 /**
  * Runtime：应用层编排入口。
@@ -81,5 +82,28 @@ export class Runtime {
         options?: SSHClientOptions,
     ): Promise<SSHConnection> {
         return this.sshClient.connect(host, options);
+    }
+
+    /**
+     * 执行一次性远程命令。
+     *
+     * 编排流程：connect → exec → close，确保连接在 finally 中关闭。
+     *
+     * @param host 已解析的目标主机信息
+     * @param command 远程命令字符串
+     * @param options 执行选项（超时等）与连接选项
+     * @returns ExecResult 包含 stdout、stderr、exitCode
+     */
+    async exec(
+        host: ResolvedHost,
+        command: string,
+        options?: ExecOptions & { connectOptions?: SSHClientOptions },
+    ): Promise<ExecResult> {
+        const connection = await this.sshClient.connect(host, options?.connectOptions);
+        try {
+            return await connection.exec(command, options);
+        } finally {
+            await connection.close();
+        }
     }
 }
