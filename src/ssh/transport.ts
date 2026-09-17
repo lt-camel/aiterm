@@ -17,6 +17,7 @@ import { Client } from 'ssh2';
 
 export type { Client, ClientChannel } from 'ssh2';
 export type { ConnectConfig } from 'ssh2';
+export type { SFTPWrapper } from 'ssh2';
 
 /**
  * 创建 ssh2 Client 实例。

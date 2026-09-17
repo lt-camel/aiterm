@@ -1,9 +1,13 @@
-import type { Client } from '@/ssh/transport';
+import type { Client, SFTPWrapper } from '@/ssh/transport';
 import type { ResolvedHost } from '@/ssh-config/model';
 import type { SSHSession } from '@/ssh/session';
 import type { ExecResult, ExecOptions } from '@/ssh/exec';
+import type { TransferResult, TransferOptions } from '@/ssh/transfer';
 import { SSHSessionImpl } from '@/ssh/session';
-import { ExecError } from '@/errors/errors';
+import { ExecError, TransferError } from '@/errors/errors';
+import { createReadStream, createWriteStream, mkdirSync, statSync, readdirSync } from 'node:fs';
+import { join, dirname, relative, sep } from 'node:path';
+import { promisify } from 'node:util';
 
 /**
  * SSHConnection 接口与实现。
@@ -20,6 +24,10 @@ import { ExecError } from '@/errors/errors';
 export interface SSHConnection {
     exec(command: string, options?: ExecOptions): Promise<ExecResult>;
     createSession(options?: SessionOptions): Promise<SSHSession>;
+    upload(localPath: string, remotePath: string, options?: TransferOptions): Promise<TransferResult>;
+    download(remotePath: string, localPath: string, options?: TransferOptions): Promise<TransferResult>;
+    uploadDir(localPath: string, remotePath: string, options?: TransferOptions): Promise<TransferResult>;
+    downloadDir(remotePath: string, localPath: string, options?: TransferOptions): Promise<TransferResult>;
     close(): Promise<void>;
 }
 
@@ -172,5 +180,347 @@ export class SSHConnectionImpl implements SSHConnection {
             this.client.on('close', () => resolve());
             this.client.end();
         });
+    }
+
+    private getSFTP(): Promise<SFTPWrapper> {
+        return new Promise<SFTPWrapper>((resolve, reject) => {
+            this.client.sftp((err, sftp) => {
+                if (err) {
+                    reject(
+                        new TransferError(
+                            `SFTP subsystem 不可用: ${err.message}`,
+                            'TRANSFER_SFTP_UNAVAILABLE',
+                            '确认远程服务器支持 SFTP subsystem',
+                        ),
+                    );
+                    return;
+                }
+                if (!sftp) {
+                    reject(
+                        new TransferError(
+                            'SFTP subsystem 返回空',
+                            'TRANSFER_SFTP_UNAVAILABLE',
+                            '确认远程服务器支持 SFTP subsystem',
+                        ),
+                    );
+                    return;
+                }
+                resolve(sftp);
+            });
+        });
+    }
+
+    /**
+     * 上传单个文件到远程。
+     *
+     * 通过 SFTP Stream pipe 传输，二进制模式，不区分文件类型。
+     *
+     * @param localPath 本地文件路径
+     * @param remotePath 远程文件路径
+     * @param options 传输选项（进度回调）
+     * @returns TransferResult
+     * @throws TransferError 本地路径不存在或远程写入失败
+     */
+    async upload(localPath: string, remotePath: string, options?: TransferOptions): Promise<TransferResult> {
+        let localStat: ReturnType<typeof statSync>;
+        try {
+            localStat = statSync(localPath);
+        } catch {
+            throw new TransferError(
+                `本地路径不存在: ${localPath}`,
+                'TRANSFER_LOCAL_NOT_FOUND',
+                '检查本地文件路径是否正确',
+            );
+        }
+
+        if (!localStat.isFile()) {
+            throw new TransferError(
+                `本地路径不是文件: ${localPath}`,
+                'TRANSFER_LOCAL_NOT_FILE',
+                '使用 --recursive 选项上传目录',
+            );
+        }
+
+        const sftp = await this.getSFTP();
+        const total = localStat.size;
+        let transferred = 0;
+
+        return new Promise<TransferResult>((resolve, reject) => {
+            const readStream = createReadStream(localPath);
+            const writeStream = sftp.createWriteStream(remotePath);
+
+            readStream.on('data', (chunk: string | Buffer) => {
+                transferred += Buffer.byteLength(chunk);
+                options?.onProgress?.(transferred, total);
+            });
+
+            writeStream.on('close', () => {
+                resolve({ bytes: transferred, local: localPath, remote: remotePath });
+            });
+
+            writeStream.on('error', (err: Error) => {
+                reject(
+                    new TransferError(
+                        `上传失败: ${err.message}`,
+                        'TRANSFER_REMOTE_WRITE_ERROR',
+                        '检查远程路径与写入权限',
+                    ),
+                );
+            });
+
+            readStream.on('error', (err: Error) => {
+                reject(
+                    new TransferError(
+                        `读取本地文件失败: ${err.message}`,
+                        'TRANSFER_LOCAL_READ_ERROR',
+                        '检查本地文件权限',
+                    ),
+                );
+            });
+
+            readStream.pipe(writeStream);
+        });
+    }
+
+    /**
+     * 从远程下载单个文件。
+     *
+     * 通过 SFTP Stream pipe 传输，二进制模式，不区分文件类型。
+     *
+     * @param remotePath 远程文件路径
+     * @param localPath 本地文件路径
+     * @param options 传输选项（进度回调）
+     * @returns TransferResult
+     * @throws TransferError 远程路径不存在或本地写入失败
+     */
+    async download(remotePath: string, localPath: string, options?: TransferOptions): Promise<TransferResult> {
+        const sftp = await this.getSFTP();
+
+        const statAsync = promisify(sftp.stat).bind(sftp);
+        let remoteStat: { size: number };
+        try {
+            remoteStat = await statAsync(remotePath);
+        } catch {
+            throw new TransferError(
+                `远程路径不存在: ${remotePath}`,
+                'TRANSFER_REMOTE_NOT_FOUND',
+                '检查远程文件路径是否正确',
+            );
+        }
+
+        const total = remoteStat.size;
+        let transferred = 0;
+
+        const localDir = dirname(localPath);
+        try {
+            mkdirSync(localDir, { recursive: true });
+        } catch {
+            // 目录已存在，忽略
+        }
+
+        return new Promise<TransferResult>((resolve, reject) => {
+            const readStream = sftp.createReadStream(remotePath);
+            const writeStream = createWriteStream(localPath);
+
+            readStream.on('data', (chunk: string | Buffer) => {
+                transferred += Buffer.byteLength(chunk);
+                options?.onProgress?.(transferred, total);
+            });
+
+            writeStream.on('close', () => {
+                resolve({ bytes: transferred, local: localPath, remote: remotePath });
+            });
+
+            writeStream.on('error', (err: Error) => {
+                reject(
+                    new TransferError(
+                        `写入本地文件失败: ${err.message}`,
+                        'TRANSFER_LOCAL_WRITE_ERROR',
+                        '检查本地路径与写入权限',
+                    ),
+                );
+            });
+
+            readStream.on('error', (err: Error) => {
+                reject(
+                    new TransferError(
+                        `下载失败: ${err.message}`,
+                        'TRANSFER_REMOTE_READ_ERROR',
+                        '检查远程文件权限',
+                    ),
+                );
+            });
+
+            readStream.pipe(writeStream);
+        });
+    }
+
+    /**
+     * 递归上传本地目录到远程。
+     *
+     * 纯 SFTP 协议原语（mkdir + 逐文件 upload），不调用远程 Shell 命令。
+     *
+     * @param localPath 本地目录路径
+     * @param remotePath 远程目录路径
+     * @param options 传输选项（进度回调）
+     * @returns TransferResult 汇总字节数
+     * @throws TransferError 本地路径不存在或不是目录
+     */
+    async uploadDir(localPath: string, remotePath: string, options?: TransferOptions): Promise<TransferResult> {
+        let localStat: ReturnType<typeof statSync>;
+        try {
+            localStat = statSync(localPath);
+        } catch {
+            throw new TransferError(
+                `本地路径不存在: ${localPath}`,
+                'TRANSFER_LOCAL_NOT_FOUND',
+                '检查本地目录路径是否正确',
+            );
+        }
+
+        if (!localStat.isDirectory()) {
+            throw new TransferError(
+                `本地路径不是目录: ${localPath}`,
+                'TRANSFER_LOCAL_NOT_DIR',
+                '去掉 --recursive 选项上传单个文件',
+            );
+        }
+
+        const sftp = await this.getSFTP();
+        const mkdirAsync = promisify(sftp.mkdir).bind(sftp);
+
+        let totalBytes = 0;
+        const files = this.collectLocalFiles(localPath);
+
+        try {
+            await mkdirAsync(remotePath);
+        } catch {
+            // 目录已存在，忽略
+        }
+
+        for (const relPath of files) {
+            const fullLocal = join(localPath, relPath);
+            const fullRemote = join(remotePath, relPath).split(sep).join('/');
+
+            const remoteDir = dirname(fullRemote).split(sep).join('/');
+            await this.ensureRemoteDir(sftp, remoteDir);
+
+            const result = await this.upload(fullLocal, fullRemote, {
+                onProgress: options?.onProgress,
+            });
+            totalBytes += result.bytes;
+        }
+
+        return { bytes: totalBytes, local: localPath, remote: remotePath };
+    }
+
+    /**
+     * 递归下载远程目录到本地。
+     *
+     * 纯 SFTP 协议原语（readdir + stat + mkdir + 逐文件 download），不调用远程 Shell 命令。
+     *
+     * @param remotePath 远程目录路径
+     * @param localPath 本地目录路径
+     * @param options 传输选项（进度回调）
+     * @returns TransferResult 汇总字节数
+     * @throws TransferError 远程路径不存在或不是目录
+     */
+    async downloadDir(remotePath: string, localPath: string, options?: TransferOptions): Promise<TransferResult> {
+        const sftp = await this.getSFTP();
+        const statAsync = promisify(sftp.stat).bind(sftp);
+
+        let remoteStat: { isDirectory(): boolean };
+        try {
+            remoteStat = await statAsync(remotePath);
+        } catch {
+            throw new TransferError(
+                `远程路径不存在: ${remotePath}`,
+                'TRANSFER_REMOTE_NOT_FOUND',
+                '检查远程目录路径是否正确',
+            );
+        }
+
+        if (!remoteStat.isDirectory()) {
+            throw new TransferError(
+                `远程路径不是目录: ${remotePath}`,
+                'TRANSFER_REMOTE_NOT_DIR',
+                '去掉 --recursive 选项下载单个文件',
+            );
+        }
+
+        let totalBytes = 0;
+        const files = await this.collectRemoteFiles(sftp, remotePath);
+
+        mkdirSync(localPath, { recursive: true });
+
+        for (const relPath of files) {
+            const fullRemote = join(remotePath, relPath).split(sep).join('/');
+            const fullLocal = join(localPath, relPath);
+
+            const localDir = dirname(fullLocal);
+            mkdirSync(localDir, { recursive: true });
+
+            const result = await this.download(fullRemote, fullLocal, {
+                onProgress: options?.onProgress,
+            });
+            totalBytes += result.bytes;
+        }
+
+        return { bytes: totalBytes, local: localPath, remote: remotePath };
+    }
+
+    private collectLocalFiles(base: string): string[] {
+        const result: string[] = [];
+        const walk = (dir: string) => {
+            const entries = readdirSync(dir, { withFileTypes: true });
+            for (const entry of entries) {
+                const fullPath = join(dir, entry.name);
+                if (entry.isDirectory()) {
+                    walk(fullPath);
+                } else if (entry.isFile()) {
+                    result.push(relative(base, fullPath).split(sep).join('/'));
+                }
+            }
+        };
+        walk(base);
+        return result;
+    }
+
+    private async collectRemoteFiles(sftp: SFTPWrapper, base: string): Promise<string[]> {
+        const result: string[] = [];
+        const readdirAsync = promisify(sftp.readdir).bind(sftp);
+
+        const walk = async (dir: string) => {
+            const entries = await readdirAsync(dir);
+            for (const entry of entries) {
+                const fullPath = dir === '/' ? `/${entry.filename}` : `${dir}/${entry.filename}`;
+                const attrs = entry.attrs;
+                if (attrs.isDirectory()) {
+                    await walk(fullPath);
+                } else if (attrs.isFile()) {
+                    const rel = fullPath.startsWith(base + '/')
+                        ? fullPath.slice(base.length + 1)
+                        : fullPath;
+                    result.push(rel);
+                }
+            }
+        };
+        await walk(base);
+        return result;
+    }
+
+    private async ensureRemoteDir(sftp: SFTPWrapper, remotePath: string): Promise<void> {
+        const mkdirAsync = promisify(sftp.mkdir).bind(sftp);
+        const parts = remotePath.split('/').filter(Boolean);
+        let current = remotePath.startsWith('/') ? '/' : '';
+
+        for (const part of parts) {
+            current = current === '/' ? `/${part}` : `${current}/${part}`;
+            try {
+                await mkdirAsync(current);
+            } catch {
+                // 目录已存在，忽略
+            }
+        }
     }
 }

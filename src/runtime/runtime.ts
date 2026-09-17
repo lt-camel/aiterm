@@ -6,6 +6,7 @@ import { SSHClient } from '@/ssh/client';
 import type { SSHClientOptions } from '@/ssh/client';
 import type { SSHConnection } from '@/ssh/connection';
 import type { ExecResult, ExecOptions } from '@/ssh/exec';
+import type { TransferResult, TransferOptions } from '@/ssh/transfer';
 
 /**
  * Runtime：应用层编排入口。
@@ -102,6 +103,62 @@ export class Runtime {
         const connection = await this.sshClient.connect(host, options?.connectOptions);
         try {
             return await connection.exec(command, options);
+        } finally {
+            await connection.close();
+        }
+    }
+
+    /**
+     * 上传文件到远程主机。
+     *
+     * 编排流程：connect → upload/uploadDir → close，确保连接在 finally 中关闭。
+     *
+     * @param host 已解析的目标主机信息
+     * @param localPath 本地文件/目录路径
+     * @param remotePath 远程文件/目录路径
+     * @param options 传输选项与连接选项
+     * @returns TransferResult
+     */
+    async upload(
+        host: ResolvedHost,
+        localPath: string,
+        remotePath: string,
+        options?: TransferOptions & { connectOptions?: SSHClientOptions },
+    ): Promise<TransferResult> {
+        const connection = await this.sshClient.connect(host, options?.connectOptions);
+        try {
+            if (options?.recursive) {
+                return await connection.uploadDir(localPath, remotePath, options);
+            }
+            return await connection.upload(localPath, remotePath, options);
+        } finally {
+            await connection.close();
+        }
+    }
+
+    /**
+     * 从远程主机下载文件。
+     *
+     * 编排流程：connect → download/downloadDir → close，确保连接在 finally 中关闭。
+     *
+     * @param host 已解析的目标主机信息
+     * @param remotePath 远程文件/目录路径
+     * @param localPath 本地文件/目录路径
+     * @param options 传输选项与连接选项
+     * @returns TransferResult
+     */
+    async download(
+        host: ResolvedHost,
+        remotePath: string,
+        localPath: string,
+        options?: TransferOptions & { connectOptions?: SSHClientOptions },
+    ): Promise<TransferResult> {
+        const connection = await this.sshClient.connect(host, options?.connectOptions);
+        try {
+            if (options?.recursive) {
+                return await connection.downloadDir(remotePath, localPath, options);
+            }
+            return await connection.download(remotePath, localPath, options);
         } finally {
             await connection.close();
         }

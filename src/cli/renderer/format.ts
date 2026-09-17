@@ -1,6 +1,7 @@
 import type { ResolvedHost } from '@/ssh-config/model';
 import type { SSHConfig } from '@/ssh-config/model';
 import type { ExecResult } from '@/ssh/exec';
+import type { TransferResult } from '@/ssh/transfer';
 import { getNamedHosts } from '@/ssh-config/parser';
 
 /**
@@ -136,5 +137,72 @@ export function formatExecResult(result: ExecResult, json: boolean): {
         stdout: result.stdout,
         stderr,
         exitCode: result.exitCode,
+    };
+}
+
+/**
+ * 人类可读的字节数格式化。
+ *
+ * @param bytes 字节数
+ * @returns 格式化字符串，如 "1.2MB"、"345KB"
+ */
+export function formatBytes(bytes: number): string {
+    if (bytes < 1024) return `${bytes}B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)}GB`;
+}
+
+/**
+ * 格式化传输进度条。
+ *
+ * 人类格式：[=========>          ] 45%  4.5MB/10MB
+ * 使用 \r 回到行首覆盖更新。
+ *
+ * @param transferred 已传输字节数
+ * @param total 总字节数
+ * @returns 进度条字符串（不含换行）
+ */
+export function formatTransferProgress(transferred: number, total: number): string {
+    const width = 40;
+    const ratio = total > 0 ? transferred / total : 0;
+    const percent = Math.floor(ratio * 100);
+    const filled = Math.floor(ratio * width);
+    const bar = '='.repeat(filled) + (filled < width ? '>' : '');
+    const padding = ' '.repeat(Math.max(0, width - filled - 1));
+
+    return `[${bar}${padding}] ${percent}%  ${formatBytes(transferred)}/${formatBytes(total)}`;
+}
+
+/**
+ * 格式化传输结果输出。
+ *
+ * 对应 CLI-Spec §3.7。
+ * - 人类格式：✓ uploaded ./app.exe → /tmp/app.exe  (1.2MB)
+ * - JSON 格式：{ "ok": true, "bytes": 1258291, "local": "...", "remote": "..." }
+ *
+ * @param result 传输结果
+ * @param direction 传输方向
+ * @param json 是否输出 JSON 格式
+ */
+export function formatTransferResult(
+    result: TransferResult,
+    direction: 'upload' | 'download',
+    json: boolean,
+): { stdout: string; stderr: string } {
+    if (json) {
+        return {
+            stdout: JSON.stringify({ ok: true, bytes: result.bytes, local: result.local, remote: result.remote }),
+            stderr: '',
+        };
+    }
+
+    const arrow = direction === 'upload' ? '→' : '←';
+    const verb = direction === 'upload' ? 'uploaded' : 'downloaded';
+    const size = formatBytes(result.bytes);
+
+    return {
+        stdout: `✓ ${verb} ${result.local} ${arrow} ${result.remote}  (${size})\n`,
+        stderr: '',
     };
 }

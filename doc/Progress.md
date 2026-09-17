@@ -19,7 +19,7 @@
 
 ## 当前焦点
 
-Phase 4 — Transfer（Phase 3 已完成）
+Phase 5 — Skill（Phase 4 已完成）
 
 ---
 
@@ -149,25 +149,25 @@ Phase 4 — Transfer（Phase 3 已完成）
 
 | Step | 状态 | 备注 |
 |------|------|------|
-| 4.1 ssh/transfer.ts SFTP | [ ] | |
-| 4.2 cli/commands/upload.ts | [ ] | |
-| 4.3 cli/commands/download.ts | [ ] | |
-| 4.4 传输进度显示 | [ ] | |
+| 4.1 ssh/transfer.ts SFTP | [x] | TransferResult + TransferOptions 类型，含 recursive 选项 |
+| 4.2 cli/commands/upload.ts | [x] | registerUploadCommand，--recursive 选项 |
+| 4.3 cli/commands/download.ts | [x] | registerDownloadCommand，--recursive 选项 |
+| 4.4 传输进度显示 | [x] | formatTransferProgress + formatTransferResult，人类+JSON 双格式 |
 
 **验收**：
 
 | 编号 | 验收项 | 状态 |
 |------|--------|------|
-| A4.1 | upload 上传单个文件 | [ ] |
-| A4.2 | download 下载单个文件 | [ ] |
-| A4.3 | 传输后文件内容一致（二进制校验） | [ ] |
-| A4.4 | 二进制文件正确传输 | [ ] |
-| A4.5 | 远程路径不存在清晰错误 | [ ] |
-| A4.6 | 本地路径不存在清晰错误 | [ ] |
-| A4.7 | 传输进度显示 | [ ] |
-| A4.8 | `aiterm upload` 可用 | [ ] |
-| A4.9 | `aiterm download` 可用 | [ ] |
-| A4.10 | Transfer 不区分文件类型 | [ ] |
+| A4.1 | upload 上传单个文件 | [x] |
+| A4.2 | download 下载单个文件 | [x] |
+| A4.3 | 传输后文件内容一致（二进制校验） | [x] |
+| A4.4 | 二进制文件正确传输 | [x] |
+| A4.5 | 远程路径不存在清晰错误 | [x] |
+| A4.6 | 本地路径不存在清晰错误 | [x] |
+| A4.7 | 传输进度显示 | [x] |
+| A4.8 | `aiterm upload` 可用 | [x] |
+| A4.9 | `aiterm download` 可用 | [x] |
+| A4.10 | Transfer 不区分文件类型 | [x] |
 
 ---
 
