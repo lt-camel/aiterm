@@ -2,7 +2,7 @@ import type { Client, SFTPWrapper } from '@/ssh/transport';
 import type { ResolvedHost } from '@/ssh-config/model';
 import type { SSHSession } from '@/ssh/session';
 import type { ExecResult, ExecOptions } from '@/ssh/exec';
-import type { TransferResult, TransferOptions } from '@/ssh/transfer';
+import type { TransferResult, TransferOptions, DirProgressInfo } from '@/ssh/transfer';
 import { SSHSessionImpl } from '@/ssh/session';
 import { ExecError, TransferError } from '@/errors/errors';
 import { createReadStream, createWriteStream, mkdirSync, statSync, readdirSync } from 'node:fs';
@@ -389,8 +389,13 @@ export class SSHConnectionImpl implements SSHConnection {
         const sftp = await this.getSFTP();
         const mkdirAsync = promisify(sftp.mkdir).bind(sftp);
 
-        let totalBytes = 0;
         const files = this.collectLocalFiles(localPath);
+
+        const fileSizes = new Map<string, number>();
+        for (const relPath of files) {
+            fileSizes.set(relPath, statSync(join(localPath, relPath)).size);
+        }
+        const totalBytes = [...fileSizes.values()].reduce((a, b) => a + b, 0);
 
         try {
             await mkdirAsync(remotePath);
@@ -398,17 +403,31 @@ export class SSHConnectionImpl implements SSHConnection {
             // 目录已存在，忽略
         }
 
-        for (const relPath of files) {
+        let accumulated = 0;
+        for (let i = 0; i < files.length; i++) {
+            const relPath = files[i]!;
+            const fileSize = fileSizes.get(relPath)!;
             const fullLocal = join(localPath, relPath);
             const fullRemote = join(remotePath, relPath).split(sep).join('/');
 
             const remoteDir = dirname(fullRemote).split(sep).join('/');
             await this.ensureRemoteDir(sftp, remoteDir);
 
-            const result = await this.upload(fullLocal, fullRemote, {
-                onProgress: options?.onProgress,
+            await this.upload(fullLocal, fullRemote, {
+                onProgress: options?.onProgress
+                    ? (fileTransferred: number, fileTotal: number) => {
+                        const info: DirProgressInfo = {
+                            fileIndex: i + 1,
+                            fileCount: files.length,
+                            currentFile: relPath,
+                            fileTransferred,
+                            fileTotal,
+                        };
+                        options.onProgress!(accumulated + fileTransferred, totalBytes, info);
+                    }
+                    : undefined,
             });
-            totalBytes += result.bytes;
+            accumulated += fileSize;
         }
 
         return { bytes: totalBytes, local: localPath, remote: remotePath };
@@ -448,22 +467,43 @@ export class SSHConnectionImpl implements SSHConnection {
             );
         }
 
-        let totalBytes = 0;
         const files = await this.collectRemoteFiles(sftp, remotePath);
+
+        const fileSizes = new Map<string, number>();
+        for (const relPath of files) {
+            const fullRemote = join(remotePath, relPath).split(sep).join('/');
+            const stat = await statAsync(fullRemote);
+            fileSizes.set(relPath, stat.size);
+        }
+        const totalBytes = [...fileSizes.values()].reduce((a, b) => a + b, 0);
 
         mkdirSync(localPath, { recursive: true });
 
-        for (const relPath of files) {
+        let accumulated = 0;
+        for (let i = 0; i < files.length; i++) {
+            const relPath = files[i]!;
+            const fileSize = fileSizes.get(relPath)!;
             const fullRemote = join(remotePath, relPath).split(sep).join('/');
             const fullLocal = join(localPath, relPath);
 
             const localDir = dirname(fullLocal);
             mkdirSync(localDir, { recursive: true });
 
-            const result = await this.download(fullRemote, fullLocal, {
-                onProgress: options?.onProgress,
+            await this.download(fullRemote, fullLocal, {
+                onProgress: options?.onProgress
+                    ? (fileTransferred: number, fileTotal: number) => {
+                        const info: DirProgressInfo = {
+                            fileIndex: i + 1,
+                            fileCount: files.length,
+                            currentFile: relPath,
+                            fileTransferred,
+                            fileTotal,
+                        };
+                        options.onProgress!(accumulated + fileTransferred, totalBytes, info);
+                    }
+                    : undefined,
             });
-            totalBytes += result.bytes;
+            accumulated += fileSize;
         }
 
         return { bytes: totalBytes, local: localPath, remote: remotePath };

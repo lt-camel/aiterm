@@ -1,5 +1,6 @@
 import type { Command } from 'commander';
 import type { Runtime } from '@/runtime/runtime';
+import type { DirProgressInfo } from '@/ssh/transfer';
 import { formatTransferResult, formatTransferProgress } from '@/cli/renderer/format';
 import { AitermError, getExitCode } from '@/errors/errors';
 
@@ -35,13 +36,20 @@ export function registerDownloadCommand(program: Command, runtime: Runtime): voi
                 const config = await runtime.loadConfig(configPath);
                 const resolved = runtime.resolveTarget(config, target);
 
+                let firstProgress = true;
                 const result = await runtime.download(resolved, remote, local, {
                     recursive: recursive ?? false,
                     connectOptions: {},
                     onProgress: !json
-                        ? (transferred: number, total: number) => {
-                            const progress = formatTransferProgress(transferred, total);
-                            process.stderr.write(`\r${progress}`);
+                        ? (transferred: number, total: number, info?: DirProgressInfo) => {
+                            const progress = formatTransferProgress(transferred, total, info);
+                            if (firstProgress) {
+                                process.stderr.write(progress);
+                                firstProgress = false;
+                            } else {
+                                const lines = info ? 2 : 1;
+                                process.stderr.write(`\x1b[${lines}A\r${progress}`);
+                            }
                         }
                         : undefined,
                 });

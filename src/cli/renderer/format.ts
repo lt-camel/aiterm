@@ -1,7 +1,7 @@
 import type { ResolvedHost } from '@/ssh-config/model';
 import type { SSHConfig } from '@/ssh-config/model';
 import type { ExecResult } from '@/ssh/exec';
-import type { TransferResult } from '@/ssh/transfer';
+import type { TransferResult, DirProgressInfo } from '@/ssh/transfer';
 import { getNamedHosts } from '@/ssh-config/parser';
 
 /**
@@ -156,22 +156,49 @@ export function formatBytes(bytes: number): string {
 /**
  * 格式化传输进度条。
  *
- * 人类格式：[=========>          ] 45%  4.5MB/10MB
- * 使用 \r 回到行首覆盖更新。
+ * 单文件（info 为 undefined）：
+ *   [=========>          ] 45%  4.5MB/10MB
  *
- * @param transferred 已传输字节数
- * @param total 总字节数
- * @returns 进度条字符串（不含换行）
+ * 目录传输（info 存在），双行：
+ *   subdir/file2.txt  9KB/20KB
+ *   [====================>                   ] 50%  2/5 files
+ *
+ * @param transferred 已传输字节数（目录场景为整体已传）
+ * @param total 总字节数（目录场景为目录总量）
+ * @param info 目录进度信息，仅递归传输时提供
+ * @returns 进度字符串（不含换行，目录场景含 \n 分隔双行）
  */
-export function formatTransferProgress(transferred: number, total: number): string {
-    const width = 40;
+export function formatTransferProgress(transferred: number, total: number, info?: DirProgressInfo): string {
+    if (!info) {
+        const width = 40;
+        const ratio = total > 0 ? transferred / total : 0;
+        const percent = Math.floor(ratio * 100);
+        const filled = Math.floor(ratio * width);
+        const bar = '='.repeat(filled) + (filled < width ? '>' : '');
+        const padding = ' '.repeat(Math.max(0, width - filled - 1));
+
+        return `[${bar}${padding}] ${percent}%  ${formatBytes(transferred)}/${formatBytes(total)}`;
+    }
+
+    const line2Width = 40;
     const ratio = total > 0 ? transferred / total : 0;
     const percent = Math.floor(ratio * 100);
-    const filled = Math.floor(ratio * width);
-    const bar = '='.repeat(filled) + (filled < width ? '>' : '');
-    const padding = ' '.repeat(Math.max(0, width - filled - 1));
+    const filled = Math.floor(ratio * line2Width);
+    const bar = '='.repeat(filled) + (filled < line2Width ? '>' : '');
+    const padding = ' '.repeat(Math.max(0, line2Width - filled - 1));
 
-    return `[${bar}${padding}] ${percent}%  ${formatBytes(transferred)}/${formatBytes(total)}`;
+    const sizeInfo = `${formatBytes(info.fileTransferred)}/${formatBytes(info.fileTotal)}`;
+    const maxLineWidth = 80;
+    const line2Prefix = `[${bar}${padding}] ${percent}%  ${formatBytes(transferred)}/${formatBytes(total)}  ${info.fileIndex}/${info.fileCount} files`;
+    const maxFileNameLen = Math.max(0, maxLineWidth - sizeInfo.length - 2);
+    const displayName = info.currentFile.length > maxFileNameLen
+        ? info.currentFile.slice(0, maxFileNameLen - 1) + '…'
+        : info.currentFile;
+
+    const line1 = `${displayName}  ${sizeInfo}`;
+    const line2 = line2Prefix;
+
+    return `${line1}\n${line2}`;
 }
 
 /**

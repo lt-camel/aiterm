@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { formatTransferProgress, formatTransferResult, formatBytes } from '@/cli/renderer/format';
-import type { TransferResult } from '@/ssh/transfer';
+import type { TransferResult, DirProgressInfo } from '@/ssh/transfer';
 
 describe('formatBytes', () => {
     it('formats bytes', () => {
@@ -43,6 +43,39 @@ describe('formatTransferProgress', () => {
     it('handles zero total', () => {
         const result = formatTransferProgress(0, 0);
         expect(result).toContain('0%');
+    });
+
+    it('shows directory progress with two lines', () => {
+        const info: DirProgressInfo = {
+            fileIndex: 2,
+            fileCount: 5,
+            currentFile: 'subdir/file2.txt',
+            fileTransferred: 9216,
+            fileTotal: 20480,
+        };
+        const result = formatTransferProgress(30720, 61440, info);
+        const lines = result.split('\n');
+        expect(lines.length).toBe(2);
+        expect(lines[0]).toContain('subdir/file2.txt');
+        expect(lines[0]).toContain('9.0KB/20.0KB');
+        expect(lines[1]).toContain('50%');
+        expect(lines[1]).toContain('2/5 files');
+        expect(lines[1]).toContain('30.0KB/60.0KB');
+    });
+
+    it('truncates long filename in directory progress', () => {
+        const longName = 'a'.repeat(100);
+        const info: DirProgressInfo = {
+            fileIndex: 1,
+            fileCount: 1,
+            currentFile: longName,
+            fileTransferred: 0,
+            fileTotal: 100,
+        };
+        const result = formatTransferProgress(0, 100, info);
+        const lines = result.split('\n');
+        expect(lines[0]!.length).toBeLessThanOrEqual(80);
+        expect(lines[0]).toContain('…');
     });
 });
 
