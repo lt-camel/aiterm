@@ -46,9 +46,11 @@ export function registerUploadCommand(program: Command, runtime: Runtime): void 
                             if (firstProgress) {
                                 process.stderr.write(progress);
                                 firstProgress = false;
+                            } else if (info) {
+                                const [line1, line2] = progress.split('\n');
+                                process.stderr.write(`\x1b[1A\r\x1b[2K${line1}\n\x1b[2K${line2}`);
                             } else {
-                                const lines = info ? 2 : 1;
-                                process.stderr.write(`\x1b[${lines}A\r${progress}`);
+                                process.stderr.write(`\r${progress}`);
                             }
                         }
                         : undefined,
